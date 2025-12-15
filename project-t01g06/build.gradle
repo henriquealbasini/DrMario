@@ -1,6 +1,8 @@
 plugins {
     id 'java'
     id 'application'
+    id 'info.solidsoft.pitest' version '1.15.0'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
 }
 
 group 'com.TWEgit.example'
@@ -13,13 +15,32 @@ repositories {
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+    testImplementation 'org.mockito:mockito-core:5.5.0'
     implementation group: 'com.googlecode.lanterna', name: 'lanterna', version: '3.1.1'
 }
+
+
+application {
+    mainClass.set("com.g06.Application")
+}
+
 
 test {
     useJUnitPlatform()
 }
 
-application {
-    mainClass.set("Application")
+pitest {
+    junit5PluginVersion = '1.2.1'
+    targetClasses = ['com.g06.*']
+    excludedClasses = []
+    threads = 4
+    outputFormats = ['XML', 'HTML']
+    timestampedReports = false
+}
+
+// ShadowJar will create a fat JAR under build/libs
+shadowJar {
+    archiveBaseName.set('project-t01g06-all')
+    archiveClassifier.set('')
+    archiveVersion.set('')
 }
