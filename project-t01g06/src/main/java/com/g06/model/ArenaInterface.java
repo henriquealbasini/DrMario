@@ -13,4 +13,5 @@ public interface ArenaInterface {
     boolean isInside(Position p);
     void setCurrentPill(Pill pill);
 
+    int getVirusCount();
 }

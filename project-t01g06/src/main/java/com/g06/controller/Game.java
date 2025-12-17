@@ -35,7 +35,7 @@ public class Game {
 
     private boolean headless = false; // fallback to console if Lanterna unavailable
 
-    private enum GameState { READY, PLAYING, GAME_OVER }
+    private enum GameState { READY, INSTRUCTIONS, PLAYING, GAME_OVER, VICTORY }
 
     public Game(){
         try {
@@ -53,14 +53,12 @@ public class Game {
             headless = true;
         }
 
-        // Inicialização MVC
         this.arena = new Arena(RES_X, RES_Y);
         if (!headless) {
             this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
             this.menuViewer = new MenuViewer(screen.newTextGraphics());
         }
 
-        // Controllers
         this.arenaController = new ArenaController(arena);
         this.menuController = new MenuController();
         this.controller = menuController; // start in menu
@@ -102,11 +100,20 @@ public class Game {
                             // Start playing
                             gameState = GameState.PLAYING;
                             controller = arenaController;
+
+                        } else if (action == MenuController.MenuAction.INSTRUCTIONS) {
+                            gameState = GameState.INSTRUCTIONS;
+
                         } else if (action == MenuController.MenuAction.RESTART) {
-                            // Restart: recreate arena and controller
-                            resetGame();
-                            gameState = GameState.PLAYING;
-                            controller = arenaController;
+                            if (gameState == GameState.INSTRUCTIONS) {
+                                gameState = GameState.READY;
+                            }
+                            else{
+                                    resetGame();
+                                    gameState = GameState.PLAYING;
+                                    controller = arenaController;
+                                }
+
                         } else if (action == MenuController.MenuAction.QUIT) {
                             screen.close();
                             break;
@@ -125,6 +132,10 @@ public class Game {
                     if (arenaController.isGameOver()) {
                         gameState = GameState.GAME_OVER;
                         controller = menuController; // use menu controller to accept restart/quit
+                    }
+                    else if (arenaController.isVictory()) {
+                        gameState = GameState.VICTORY;
+                        controller = menuController; // Permite reiniciar ou sair
                     }
                 }
 
@@ -266,14 +277,18 @@ public class Game {
         screen.clear();
         if (gameState == GameState.READY) {
             menuViewer.drawStartMenu(screen.getTerminalSize(), menuController.getDifficulty());
+        } else if (gameState == GameState.INSTRUCTIONS) {
+            menuViewer.drawInstructions(screen.getTerminalSize());
+
         } else if (gameState == GameState.PLAYING) {
             arenaViewer.draw(arena);
-        } else { // GAME_OVER
+        } else {
             menuViewer.drawGameOver(screen.getTerminalSize());
+        }
+        if (gameState == GameState.VICTORY) {
+            menuViewer.drawVictory(screen.getTerminalSize());
         }
         screen.refresh();
     }
-
-    // O método 'processKey' antigo foi REMOVIDO porque agora usamos controller.processKey()
 }
 

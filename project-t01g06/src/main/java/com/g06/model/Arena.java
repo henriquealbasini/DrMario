@@ -105,4 +105,17 @@ public class Arena implements ArenaInterface {
     public boolean isInside(Position p) {
         return p.getX() >= 0 && p.getX() < width && p.getY() >= 0 && p.getY() < height;
     }
+    public int getVirusCount() {
+        int count = 0;
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                Block b = matrix[x][y];
+                // Verifica se o bloco existe e se é um vírus
+                if (b != null && b.isVirus()) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
 }

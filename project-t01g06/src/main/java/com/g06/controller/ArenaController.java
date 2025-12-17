@@ -89,6 +89,11 @@ public class ArenaController implements Controller {
         // Executa a lógica de limpeza e gravidade
         checkAndClearLines();
 
+        if (arena.getVirusCount() == 0) {
+            this.victory = true;
+            return; // Não faz spawn de nova pílula se ganhou
+        }
+
         // Gera nova pílula
         boolean spawned = arena.spawnNewPill();
         if (!spawned) {
@@ -153,7 +158,6 @@ public class ArenaController implements Controller {
         applyClusterGravity();
     }
 
-    // --- Gravidade Complexa (Clusters) ---
 
     private void applyClusterGravity() {
         boolean moved;
@@ -266,7 +270,6 @@ public class ArenaController implements Controller {
         }
     }
 
-    // --- Helpers ---
 
     private boolean canMove(Pill pill) {
         Position p1 = pill.getPosition();
@@ -317,5 +320,9 @@ public class ArenaController implements Controller {
 
     public boolean isGameOver() {
         return gameOver;
+    }
+    private boolean victory = false;
+    public boolean isVictory() {
+        return victory;
     }
 }

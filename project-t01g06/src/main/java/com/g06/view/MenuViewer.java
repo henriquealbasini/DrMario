@@ -22,17 +22,17 @@ public class MenuViewer {
         graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_BG));
         graphics.fillRectangle(new TerminalPosition(0,0), terminalSize, ' ');
 
-        String title = "DR-LIKE - JAVA EDITION";
+        String title = "DR-LANTERNA";
         String subtitle = "Press Enter to Start";
-        String controls = "Arrows: Move/Rotate  |  Q: Quit";
-        String difficultyLine = "Difficulty: " + difficulty.name() + "  (Left/Right or A/D to change)";
+        String quit = "Q: Quit | I: Instructions";
+        String difficultyLine = "Difficulty: " + difficulty.name();
 
         int centerY = terminalSize.getRows() / 2;
 
         putCentered(centerY - 2, title, TITLE_COLOR, true);
         putCentered(centerY, subtitle, SUB_COLOR, false);
-        putCentered(centerY + 1, difficultyLine, SUB_COLOR, false);
-        putCentered(centerY + 3, controls, SUB_COLOR, false);
+        putCentered(centerY + 2, difficultyLine, SUB_COLOR, false);
+        putCentered(centerY + 4, quit, SUB_COLOR, false);
     }
 
     public void drawGameOver(TerminalSize terminalSize) {
@@ -55,5 +55,37 @@ public class MenuViewer {
         if (bold) graphics.enableModifiers(SGR.BOLD);
         graphics.putString(new TerminalPosition(col, row), text);
         if (bold) graphics.disableModifiers(SGR.BOLD);
+    }
+    public void drawVictory(TerminalSize terminalSize) {
+        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_BG));
+        graphics.fillRectangle(new TerminalPosition(0,0), terminalSize, ' ');
+
+        String title = "YOU WIN!";
+        String subtitle = "All viruses eliminated";
+        String restart = "Press R to Restart or Q to Quit";
+
+        int centerY = terminalSize.getRows() / 2;
+
+        putCentered(centerY - 2, title, "#ffe112", true);
+        putCentered(centerY, subtitle, "#ffffff", false);
+        putCentered(centerY + 2, restart, SUB_COLOR, false);
+    }
+    public void drawInstructions(TerminalSize terminalSize) {
+        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_BG));
+        graphics.fillRectangle(new TerminalPosition(0,0), terminalSize, ' ');
+
+        String title = "INSTRUCTIONS";
+
+        int centerY = terminalSize.getRows() / 2;
+        int startY = centerY - 5;
+
+        putCentered(startY, title, TITLE_COLOR, true);
+
+        putCentered(startY + 2, "Left/Right Arrows: Move", "#FFFFFF", false);
+        putCentered(startY + 4, "Up Arrow: Rotate", "#FFFFFF", false);
+        putCentered(startY + 6, "Down Arrow: Soft Drop", "#FFFFFF", false);
+        putCentered(startY + 8, "Q: Quit Game", "#FFFFFF", false);
+
+        putCentered(startY + 10, "ESC: Return to Menu", SUB_COLOR, true);
     }
 }

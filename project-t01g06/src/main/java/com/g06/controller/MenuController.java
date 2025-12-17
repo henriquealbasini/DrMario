@@ -9,7 +9,7 @@ import com.googlecode.lanterna.input.KeyType;
  */
 public class MenuController implements Controller {
 
-    public enum MenuAction { NONE, START, RESTART, QUIT }
+    public enum MenuAction { NONE, START, INSTRUCTIONS, RESTART, QUIT }
 
     private MenuAction lastAction = MenuAction.NONE;
     private Difficulty difficulty = Difficulty.NORMAL;
@@ -48,6 +48,9 @@ public class MenuController implements Controller {
                     case 'r':
                         lastAction = MenuAction.RESTART;
                         break;
+                    case 'i':
+                        lastAction = MenuAction.INSTRUCTIONS;
+                        break;
                     case 'a':
                         difficulty = difficulty.previous();
                         break;
@@ -60,6 +63,8 @@ public class MenuController implements Controller {
             }
         } else if (key.getKeyType() == KeyType.Enter) {
             lastAction = MenuAction.START;
+        } else if (key.getKeyType() == KeyType.Escape) {
+            lastAction = MenuAction.RESTART; // Reutilizamos RESTART para "Voltar ao Início"
         }
     }
 }
