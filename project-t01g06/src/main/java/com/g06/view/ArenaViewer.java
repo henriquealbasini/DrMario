@@ -111,6 +111,7 @@ public class ArenaViewer {
 
         // Draw HUD on the right
         drawHUD(arena, level, difficulty, mode, levelStartTime, pausedElapsedSeconds, arenaCols, showContinue, score);
+        drawMonster(arena.getMonster());
     }
 
     private void drawHUD(Arena arena, int level, Difficulty difficulty, MenuController.Mode mode, Instant levelStartTime, long pausedElapsedSeconds, int arenaCols, boolean showContinue, int score) {
@@ -410,5 +411,11 @@ public class ArenaViewer {
 
         graphics.disableModifiers(SGR.BOLD);
         graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_COLOR));
+    }
+    private void drawMonster(Monster monster) {
+        if (monster == null) return;
+        // Desenha um 'M' verde
+        graphics.setForegroundColor(TextColor.Factory.fromString("#00FF00"));
+        graphics.putString(new TerminalPosition(monster.getPosition().getX(), monster.getPosition().getY()), "M");
     }
 }

@@ -15,6 +15,8 @@ public class Arena implements ArenaInterface {
     private int width;
     private Pill currentPill;
     private Pill nextPill;
+    private Monster monster;
+    private int level = 1;
 
     private final String[] VALID_COLORS = {"RED", "YELLOW", "BLUE"};
     private final Random random = new Random();
@@ -32,6 +34,7 @@ public class Arena implements ArenaInterface {
         this.width = width;
         this.matrix = new Block[width][height];
         this.walls = createWalls();
+        this.monster = new Monster(width / 2, 5);
         spawnViruses(virusCount);
         // Initialize current and next pills
         // Generate next pill then set current from it, and generate another next
@@ -148,5 +151,16 @@ public class Arena implements ArenaInterface {
             }
         }
         return count;
+    }
+    public Monster getMonster() {
+        return monster;
+    }
+
+    public int getLevel() {
+        return level;
+    }
+
+    public void levelUp() {
+        this.level++;
     }
 }

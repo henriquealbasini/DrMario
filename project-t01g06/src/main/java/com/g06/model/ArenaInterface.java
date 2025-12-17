@@ -19,4 +19,6 @@ public interface ArenaInterface {
     Pill getNextPill();
     void setNextPill(Pill pill);
     boolean generateNextPill();
+    Monster getMonster();
+    int getLevel();
 }
