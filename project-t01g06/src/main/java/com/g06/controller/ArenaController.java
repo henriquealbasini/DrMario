@@ -1,7 +1,9 @@
 package com.g06.controller;
 
 import com.g06.model.*;
+import com.g06.controller.Difficulty;
 import com.googlecode.lanterna.input.KeyStroke;
+import com.googlecode.lanterna.input.KeyType;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -13,9 +15,34 @@ import java.util.Set;
 public class ArenaController implements Controller {
     private final ArenaInterface arena;
     private boolean gameOver = false;
+    private final boolean endlessMode; // when true, don't treat zero viruses as victory
+    private int score = 0; // used in endless mode
+    private final int scoreMultiplier;
 
     public ArenaController(ArenaInterface arena) {
+        this(arena, false, Difficulty.NORMAL);
+    }
+
+    public ArenaController(ArenaInterface arena, boolean endlessMode) {
+        this(arena, endlessMode, Difficulty.NORMAL);
+    }
+
+    public ArenaController(ArenaInterface arena, boolean endlessMode, Difficulty difficulty) {
         this.arena = arena;
+        this.endlessMode = endlessMode;
+        // Map difficulty to score multiplier (tunable)
+        switch (difficulty) {
+            case EASY:
+                this.scoreMultiplier = 10; break;
+            case NORMAL:
+                this.scoreMultiplier = 15; break;
+            case HARD:
+                this.scoreMultiplier = 20; break;
+            case INSANE:
+                this.scoreMultiplier = 30; break;
+            default:
+                this.scoreMultiplier = 15; break;
+        }
     }
 
     // --- Movimento da Pílula ---
@@ -90,15 +117,40 @@ public class ArenaController implements Controller {
         checkAndClearLines();
 
         if (arena.getVirusCount() == 0) {
-            this.victory = true;
-            return; // Não faz spawn de nova pílula se ganhou
+            if (!endlessMode) {
+                this.victory = true;
+                return; // Não faz spawn de nova pílula se ganhou
+            }
+            // in endless mode, do not set victory; keep playing until spawn fails
         }
 
         // Gera nova pílula
-        boolean spawned = arena.spawnNewPill();
-        if (!spawned) {
-            this.gameOver = true;
+        // Promote the next pill (preview) to be the current pill, then generate a fresh next pill
+        Pill next = arena.getNextPill();
+        if (next == null) {
+            // Try to generate one
+            boolean genOk = arena.generateNextPill();
+            if (!genOk) { this.gameOver = true; return; }
+            next = arena.getNextPill();
         }
+
+        // Place next pill at spawn coordinates
+        next.getPosition().setX(arena.getWidth() / 2);
+        next.getPosition().setY(1);
+        arena.setCurrentPill(next);
+
+        // Generate a new preview next pill; if generation fails, allow next to be null but continue
+        boolean gen = arena.generateNextPill();
+
+        // Validate the newly set current pill fits; if it collides, it's game over
+        Position p1n = arena.getCurrentPill().getPosition();
+        Position p2n = arena.getCurrentPill().getOtherHalf();
+        if (!arena.isInside(p1n) || !arena.isInside(p2n)) { this.gameOver = true; return; }
+        for (Wall w : arena.getWalls()) {
+            if (w.getPosition().equals(p1n) || w.getPosition().equals(p2n)) { this.gameOver = true; return; }
+        }
+        Block[][] mat = arena.getMatrix();
+        if (mat[p1n.getX()][p1n.getY()] != null || mat[p2n.getX()][p2n.getY()] != null) { this.gameOver = true; return; }
     }
 
     private void checkAndClearLines() {
@@ -117,6 +169,10 @@ public class ArenaController implements Controller {
         }
 
         // Remove marked blocks and apply gravity
+        if (!toRemove.isEmpty()) {
+            // Award points: scaled by difficulty multiplier
+            this.score += toRemove.size() * this.scoreMultiplier;
+        }
         removeMarkedBlocks(toRemove);
     }
 
@@ -300,6 +356,29 @@ public class ArenaController implements Controller {
     public void processKey(KeyStroke key) {
         if (key == null) return;
 
+        // Accept WASD letters as alternative controls
+        if (key.getKeyType() == KeyType.Character) {
+            Character c = key.getCharacter();
+            if (c != null) {
+                switch (Character.toLowerCase(c)) {
+                    case 'a':
+                        movePillLeft();
+                        return;
+                    case 'd':
+                        movePillRight();
+                        return;
+                    case 'w':
+                        rotatePill();
+                        return;
+                    case 's':
+                        fallPill();
+                        return;
+                    default:
+                        break;
+                }
+            }
+        }
+
         switch (key.getKeyType()) {
             case ArrowLeft:
                 movePillLeft();
@@ -325,4 +404,7 @@ public class ArenaController implements Controller {
     public boolean isVictory() {
         return victory;
     }
+
+    // Score accessor for endless mode
+    public int getScore() { return score; }
 }

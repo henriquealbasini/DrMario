@@ -9,10 +9,16 @@ import com.googlecode.lanterna.screen.Screen;
 import com.googlecode.lanterna.screen.TerminalScreen;
 import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
 import com.googlecode.lanterna.terminal.Terminal;
+import com.googlecode.lanterna.terminal.swing.AWTTerminalFontConfiguration;
 
+import java.awt.Font;
+import java.awt.FontFormatException;
+import java.awt.GraphicsEnvironment;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.time.Instant;
 
 public class Game {
 
@@ -37,10 +43,37 @@ public class Game {
 
     private enum GameState { READY, INSTRUCTIONS, PLAYING, GAME_OVER, VICTORY }
 
+    // Level system
+    private int level = 1;
+    private Instant levelStartTime = null;
+    private long levelElapsedBeforePause = 0; // seconds
+
     public Game(){
         try {
-            TerminalSize terminalSize = new TerminalSize(RES_X * SCALE_X, RES_Y * SCALE_Y);
+            // Increase terminal width to accommodate HUD (add HUD columns)
+            int hudExtra = 24;
+            TerminalSize terminalSize = new TerminalSize((RES_X * SCALE_X) + hudExtra, RES_Y * SCALE_Y);
             DefaultTerminalFactory terminalFactory = new DefaultTerminalFactory().setInitialTerminalSize(terminalSize);
+
+            terminalFactory.setForceAWTOverSwing(true); // force AWT-based terminal frame
+            try (InputStream fontStream = getClass().getClassLoader().getResourceAsStream("fonts/terminus.ttf")) {
+                if (fontStream != null) {
+                    Font baseFont = Font.createFont(Font.TRUETYPE_FONT, fontStream);
+                    GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+                    ge.registerFont(baseFont);
+                    Font sized = baseFont.deriveFont(Font.PLAIN, 24f);
+                    AWTTerminalFontConfiguration fontConfig = AWTTerminalFontConfiguration.newInstance(sized);
+                    terminalFactory.setTerminalEmulatorFontConfiguration(fontConfig);
+                } else {
+                    // Resource not found; use a larger default as a fallback
+                    terminalFactory.setTerminalEmulatorFontConfiguration(AWTTerminalFontConfiguration.getDefaultOfSize(24));
+                    System.err.println("Warning: custom font resource 'fonts/square.ttf' not found — using default font size 24.");
+                }
+            } catch (FontFormatException | IOException e) {
+                System.err.println("Warning: failed to load custom font, using default font. Reason: " + e.getMessage());
+                terminalFactory.setTerminalEmulatorFontConfiguration(AWTTerminalFontConfiguration.getDefaultOfSize(24));
+            }
+
             Terminal terminal = terminalFactory.createTerminal();
             screen = new TerminalScreen(terminal);
 
@@ -53,7 +86,8 @@ public class Game {
             headless = true;
         }
 
-        this.arena = new Arena(RES_X, RES_Y);
+        // Initialize with level 1 (don't start timer yet)
+        this.arena = new Arena(RES_X, RES_Y, computeVirusCountForLevel(1));
         if (!headless) {
             this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
             this.menuViewer = new MenuViewer(screen.newTextGraphics());
@@ -65,6 +99,27 @@ public class Game {
 
         // Initialize fall delay from menu default
         this.fallDelayMs = menuController.getDifficulty().getDelayMs();
+    }
+
+    private int computeVirusCountForLevel(int lvl) {
+        // Safe scaling: base 5, +2 per level, capped by a reasonable max derived from arena size
+        int base = 5;
+        int incr = 2;
+        int maxByArea = (RES_X * RES_Y) / 6; // heuristic cap
+        int max = Math.max(10, maxByArea); // ensure at least 10 cap
+        int val = base + (lvl - 1) * incr;
+        if (val > max) val = max;
+        return val;
+    }
+
+    private long computeFallDelayForLevel(int lvl) {
+        // Endless mode: decay factor with floor
+        long base = menuController.getDifficulty().getDelayMs();
+        double decay = 0.95; // gentle
+        long minDelay = 80;
+        double v = base * Math.pow(decay, lvl - 1);
+        long val = Math.max(minDelay, Math.round(v));
+        return val;
     }
 
     public void run() {
@@ -87,6 +142,16 @@ public class Game {
                     }
                     if (key.getKeyType() == KeyType.EOF) break;
 
+                    // Allow returning to main menu from gameplay (press Escape)
+                    if (key.getKeyType() == KeyType.Escape && controller == arenaController) {
+                        // Go back to menu to allow changing settings; do not reset game automatically
+                        controller = menuController;
+                        gameState = GameState.READY;
+                        // Clear any pending menu action
+                        menuController.consumeAction();
+                        continue;
+                    }
+
                     // Route to active controller
                     controller.processKey(key);
 
@@ -97,9 +162,15 @@ public class Game {
                         this.fallDelayMs = menuController.getDifficulty().getDelayMs();
 
                         if (action == MenuController.MenuAction.START) {
-                            // Start playing
-                            gameState = GameState.PLAYING;
-                            controller = arenaController;
+                            if (gameState == GameState.VICTORY) {
+                                // Continue to next level when ENTER pressed on victory
+                                level = level + 1;
+                                startLevel(level);
+                                continue;
+                            }
+
+                            // Start playing from menu - ensure timer and proper setup
+                            startLevel(level);
 
                         } else if (action == MenuController.MenuAction.INSTRUCTIONS) {
                             gameState = GameState.INSTRUCTIONS;
@@ -135,7 +206,13 @@ public class Game {
                     }
                     else if (arenaController.isVictory()) {
                         gameState = GameState.VICTORY;
-                        controller = menuController; // Permite reiniciar ou sair
+                        // Capture elapsed time up to victory and pause the timer display
+                        if (levelStartTime != null) {
+                            levelElapsedBeforePause = java.time.Duration.between(levelStartTime, Instant.now()).getSeconds();
+                        } else {
+                            levelElapsedBeforePause = 0;
+                        }
+                        controller = menuController; // Permite reiniciar ou sair; wait for Enter to continue
                     }
                 }
 
@@ -157,11 +234,7 @@ public class Game {
                 String line = reader.readLine(); // wait for Enter or input
                 if (line == null) break;
                 // Start on empty line or Enter
-                gameState = GameState.PLAYING;
-                controller = arenaController;
-
-                // set fallDelay according to menu difficulty in headless mode (user may use a/d to change previous)
-                this.fallDelayMs = menuController.getDifficulty().getDelayMs();
+                startLevel(level);
 
                 // Play loop
                 long lastFallTime = System.currentTimeMillis();
@@ -184,9 +257,8 @@ public class Game {
                                     menuController.processKey(new com.googlecode.lanterna.input.KeyStroke('d', false, false));
                                     this.fallDelayMs = menuController.getDifficulty().getDelayMs();
                                     break;
-                                case 'A':
-                                case 'D':
-                                    // handled above by lowercasing, but keep for safety
+                                case 'm':
+                                    menuController.processKey(new com.googlecode.lanterna.input.KeyStroke('m', false, false));
                                     break;
                                 case 'r':
                                     // restart
@@ -211,6 +283,14 @@ public class Game {
                                         this.fallDelayMs = menuController.getDifficulty().getDelayMs();
                                     }
                                     break;
+                                case '\n':
+                                case '\r':
+                                    // If victory, continue to next level
+                                    if (gameState == GameState.VICTORY) {
+                                        level = level + 1;
+                                        startLevel(level);
+                                        break;
+                                    }
                                 default:
                                     arenaController.processKey(new com.googlecode.lanterna.input.KeyStroke(c, false, false));
                                     break;
@@ -225,7 +305,14 @@ public class Game {
 
                     if (arenaController.isGameOver()) {
                         // Show game over console and wait for r or q
-                        showGameOverConsole();
+                        if (menuController.getMode() == MenuController.Mode.LEVELS) {
+                            System.out.println("\n===== GAME OVER - You lost on level " + level + " =====");
+                        } else {
+                            // ENDLESS: show score
+                            int s = 0;
+                            if (arenaController != null) s = ((ArenaController)arenaController).getScore();
+                            System.out.println("\n===== GAME OVER - You scored " + s + " points =====");
+                        }
                         String resp = reader.readLine();
                         if (resp == null) { quit = true; break; }
                         if (!resp.isEmpty()) {
@@ -237,6 +324,20 @@ public class Game {
                                 quit = true; break;
                             }
                         }
+                    }
+
+                    if (arenaController.isVictory()) {
+                        System.out.println("\n===== LEVEL CLEARED! Press Enter to continue or R to restart or Q to quit =====");
+                        String resp = reader.readLine();
+                        if (resp == null) { quit = true; break; }
+                        if (resp.isEmpty()) {
+                            level = level + 1;
+                            startLevel(level);
+                            break; // go back to main loop to show updated state
+                        }
+                        char c = Character.toLowerCase(resp.charAt(0));
+                        if (c == 'r') { resetGame(); break; }
+                        if (c == 'q') { quit = true; break; }
                     }
 
                     Thread.sleep(50);
@@ -255,6 +356,7 @@ public class Game {
         System.out.println("   Press Enter to start");
         System.out.println("   Controls: a:left  d:right  w:rotate  s:drop  q:quit");
         System.out.println("   Difficulty: " + menuController.getDifficulty().name() + " (A/D or 1-4 to change)");
+        System.out.println("   Mode: " + menuController.getMode().name() + " (press M to toggle)");
         System.out.println("\n=============================\n");
         System.out.print("> ");
     }
@@ -266,29 +368,77 @@ public class Game {
     }
 
     private void resetGame() {
-        this.arena = new Arena(RES_X, RES_Y);
-        this.arenaController = new ArenaController(arena);
-        if (!headless) this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
-        // Update fallDelay according to menu selection
-        this.fallDelayMs = menuController.getDifficulty().getDelayMs();
+        this.level = 1;
+        if (menuController.getMode() == MenuController.Mode.ENDLESS) {
+            this.arena = new Arena(RES_X, RES_Y, 0); // no viruses in endless
+            this.arenaController = new ArenaController(arena, true, menuController.getDifficulty());
+        } else {
+            this.arena = new Arena(RES_X, RES_Y, computeVirusCountForLevel(1));
+            this.arenaController = new ArenaController(arena, false, menuController.getDifficulty());
+        }
+         if (!headless) this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
+         // Update fallDelay according to menu selection
+         this.fallDelayMs = menuController.getDifficulty().getDelayMs();
+         this.levelStartTime = Instant.now();
+         this.levelElapsedBeforePause = 0;
+     }
+
+     private void startLevel(int lvl) {
+         this.level = lvl;
+         if (menuController.getMode() == MenuController.Mode.ENDLESS) {
+            // Endless: no viruses, always spawn pills until game over; use endless ArenaController
+            this.arena = new Arena(RES_X, RES_Y, 0);
+            this.arenaController = new ArenaController(arena, true, menuController.getDifficulty());
+         } else {
+             int virusCount = computeVirusCountForLevel(lvl);
+             this.arena = new Arena(RES_X, RES_Y, virusCount);
+             this.arenaController = new ArenaController(arena, false, menuController.getDifficulty());
+         }
+         if (!headless) this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
+
+        // Set fall delay according to mode
+        if (menuController.getMode() == MenuController.Mode.ENDLESS) {
+            this.fallDelayMs = computeFallDelayForLevel(lvl);
+        } else {
+            // LEVELS mode: respect selected difficulty
+            this.fallDelayMs = menuController.getDifficulty().getDelayMs();
+        }
+
+        this.gameState = GameState.PLAYING;
+        this.controller = arenaController;
+        this.levelStartTime = Instant.now();
+        this.levelElapsedBeforePause = 0;
     }
 
     private void draw() throws IOException{
         screen.clear();
         if (gameState == GameState.READY) {
-            menuViewer.drawStartMenu(screen.getTerminalSize(), menuController.getDifficulty());
+            // Determine whether to show difficulty: hide if terminal too small to fit difficulty line
+            boolean showDifficulty = screen.getTerminalSize().getColumns() > (RES_X * SCALE_X + 10);
+            menuViewer.drawStartMenu(screen.getTerminalSize(), menuController.getDifficulty(), menuController.getMode(), showDifficulty);
         } else if (gameState == GameState.INSTRUCTIONS) {
             menuViewer.drawInstructions(screen.getTerminalSize());
 
         } else if (gameState == GameState.PLAYING) {
-            arenaViewer.draw(arena);
-        } else {
-            menuViewer.drawGameOver(screen.getTerminalSize());
+            // draw arena with HUD; no continue hint while playing
+            int score = 0;
+            if (menuController.getMode() == MenuController.Mode.ENDLESS && arenaController != null) {
+                score = ((ArenaController)arenaController).getScore();
+            }
+            arenaViewer.draw(arena, level, menuController.getDifficulty(), menuController.getMode(), levelStartTime, 0, false, score);
+        } else if (gameState == GameState.GAME_OVER) {
+            if (menuController.getMode() == MenuController.Mode.LEVELS) {
+                menuViewer.drawGameOverWithLevel(screen.getTerminalSize(), level, true);
+            } else {
+                int s = 0;
+                if (arenaController != null) s = ((ArenaController)arenaController).getScore();
+                menuViewer.drawGameOverWithScore(screen.getTerminalSize(), s);
+            }
         }
         if (gameState == GameState.VICTORY) {
-            menuViewer.drawVictory(screen.getTerminalSize());
+            // Show full-screen victory menu (clear screen) so the game is not visible behind the text
+            menuViewer.drawVictory(screen.getTerminalSize(), level);
         }
         screen.refresh();
     }
 }
-

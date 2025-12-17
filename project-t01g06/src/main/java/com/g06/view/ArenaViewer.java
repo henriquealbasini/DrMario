@@ -6,7 +6,11 @@ import com.googlecode.lanterna.TerminalSize;
 import com.googlecode.lanterna.TextColor;
 import com.googlecode.lanterna.graphics.TextGraphics;
 import com.g06.model.*;
+import com.g06.controller.Difficulty;
+import com.g06.controller.MenuController;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 
 public class ArenaViewer {
@@ -14,6 +18,9 @@ public class ArenaViewer {
     private TextGraphics graphics;
     private final int SCALE_X;
     private final int SCALE_Y;
+
+    // HUD width in characters
+    private final int HUD_WIDTH = 20;
 
     //Textures
 
@@ -25,8 +32,19 @@ public class ArenaViewer {
     private static final String CORNER_BL = "└";
     private static final String CORNER_BR = "┘";
 
-    //Blocks
-    private static final String[] TEXTURE_CHARS = {"▣", "■", "▤", "▥", "▦", "▧", "▨", "▩", "X"};
+    //Blocks — use solid/shaded block elements that render well in most monospaced fonts.
+    //Fallbacks included for environments/polices that lack advanced box glyphs.
+    private static final String[] TEXTURE_CHARS = {
+            "█", // full block
+            "▓", // dark shade
+            "▒", // medium shade
+            "░", // light shade
+            "■", // black small square
+            "▣", // square with grid (fallback)
+            "▤", // shaded pattern
+            "▥", // shaded pattern
+            "X"  // ASCII fallback
+    };
 
 
 
@@ -59,12 +77,19 @@ public class ArenaViewer {
         this.SCALE_Y = scaleY;
     }
 
-    public void draw(Arena arena) {
-        // Background
-        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_COLOR));
-        graphics.fillRectangle(new TerminalPosition(0, 0), new TerminalSize(arena.getWidth() * this.SCALE_X, arena.getHeight() * this.SCALE_Y), ' ');
+    // Updated draw signature to render HUD. levelStartTime may be null for safety.
+    public void draw(Arena arena, int level, Difficulty difficulty, MenuController.Mode mode, Instant levelStartTime, long pausedElapsedSeconds, boolean showContinue, int score) {
+        // Compute arena drawing area leaving space on the right for HUD
+        int arenaCols = arena.getWidth() * this.SCALE_X;
+        int arenaRows = arena.getHeight() * this.SCALE_Y;
+        int totalCols = Math.max(arenaCols + HUD_WIDTH, graphics.getSize().getColumns());
+        int totalRows = Math.max(arenaRows, graphics.getSize().getRows());
 
-        // Draw Walls
+        // Background for full terminal
+        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_COLOR));
+        graphics.fillRectangle(new TerminalPosition(0, 0), new TerminalSize(totalCols, totalRows), ' ');
+
+        // Draw Walls and board (left area)
         for (Wall wall : arena.getWalls()) {
             drawWall(wall, arena.getWidth(), arena.getHeight());
         }
@@ -83,6 +108,80 @@ public class ArenaViewer {
         if (arena.getCurrentPill() != null) {
             drawPill(arena.getCurrentPill());
         }
+
+        // Draw HUD on the right
+        drawHUD(arena, level, difficulty, mode, levelStartTime, pausedElapsedSeconds, arenaCols, showContinue, score);
+    }
+
+    private void drawHUD(Arena arena, int level, Difficulty difficulty, MenuController.Mode mode, Instant levelStartTime, long pausedElapsedSeconds, int arenaCols, boolean showContinue, int score) {
+        int hudX = arenaCols + 2; // leave 2 columns gap
+        int row = 1;
+        graphics.setForegroundColor(TextColor.Factory.fromString("#FFFFFF"));
+
+        // Title
+        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_COLOR));
+        // Draw next-pill preview (each half scaled according to SCALE_X/SCALE_Y), with a label above the box
+        // Determine preview size from scale so preview matches in-game cell size
+        int halfW = this.SCALE_X;
+        int halfH = this.SCALE_Y;
+        int interiorW = halfW * 2; // two halves side-by-side fits interior
+        int interiorH = halfH * 2; // two halves stacked fits interior
+        int previewW = interiorW + 2; // interior + left/right borders
+        int previewH = interiorH + 2; // interior + top/bottom borders
+        // only draw if there's space in the HUD area
+        if (graphics.getSize().getColumns() >= hudX + previewW) {
+            drawPreviewBox(hudX, row, previewW, previewH, arena.getNextPill());
+            row += previewH + 2; // label + box + extra spacing
+        }
+        if (mode == MenuController.Mode.ENDLESS) {
+            graphics.putString(new TerminalPosition(hudX, row++), "Score: " + score);
+        } else {
+            graphics.putString(new TerminalPosition(hudX, row++), "Level: " + level);
+        }
+
+        // Difficulty (only show when it affects game: LEVELS mode doesn't change speed, but it's still relevant; ENDLESS shows speed changes)
+        graphics.putString(new TerminalPosition(hudX, row++), "Difficulty: " + difficulty.name());
+
+        // Viruses remaining (hide in endless mode)
+        if (mode != MenuController.Mode.ENDLESS) {
+            graphics.putString(new TerminalPosition(hudX, row++), "Viruses: " + arena.getVirusCount());
+        }
+
+        // Elapsed time (pausedElapsedSeconds takes precedence when >0)
+        if (pausedElapsedSeconds > 0) {
+            long mins = pausedElapsedSeconds / 60;
+            long secs = pausedElapsedSeconds % 60;
+            String time = String.format("Time: %02d:%02d", mins, secs);
+            graphics.putString(new TerminalPosition(hudX, row++), time);
+        } else if (levelStartTime != null) {
+            Duration elapsed = Duration.between(levelStartTime, Instant.now());
+            long mins = elapsed.toMinutes();
+            long secs = elapsed.minusMinutes(mins).getSeconds();
+            String time = String.format("Time: %02d:%02d", mins, secs);
+            graphics.putString(new TerminalPosition(hudX, row++), time);
+        } else {
+            graphics.putString(new TerminalPosition(hudX, row++), "Time: 00:00");
+        }
+
+        // Extra spacing
+        row++;
+
+        // Small instructions at top of HUD
+        graphics.putString(new TerminalPosition(hudX, row++), "Left/Right: Move");
+        graphics.putString(new TerminalPosition(hudX, row++), "Up: Rotate");
+        graphics.putString(new TerminalPosition(hudX, row++), "Down: Drop");
+
+        // Place continue/quit hints near bottom to ensure visibility
+        int terminalRows = graphics.getSize().getRows();
+        int bottomRow = Math.max(row + 2, terminalRows - 3);
+        // Provide Esc (return to main menu) above the restart/quit hints so it fits even on narrow HUDs
+        graphics.putString(new TerminalPosition(hudX, bottomRow - 2), "Esc: Menu");
+        if (showContinue) {
+            graphics.putString(new TerminalPosition(hudX, bottomRow - 1), "Enter: Continue");
+        } else {
+            graphics.putString(new TerminalPosition(hudX, bottomRow - 1), "            ");
+        }
+        graphics.putString(new TerminalPosition(hudX, bottomRow), "R: restart   Q: quit");
     }
 
     //Color Mapping
@@ -196,5 +295,120 @@ public class ArenaViewer {
         }
 
         graphics.disableModifiers(SGR.BOLD);
+    }
+
+    // Draw the "Next Pill:" label and a bordered preview box at (x,y). The label is drawn at (x,y),
+    // and the box is directly below it occupying height h (so total consumed rows = 1 + h).
+    private void drawPreviewBox(int x, int y, int w, int h, Pill pill) {
+        // Draw label "Next Pill:" with pivot color if available
+        String label = "Next Pill:";
+        String labelColor = "#FFFFFF";
+        if (pill != null) labelColor = mapColorForeground(pill.getColor1());
+        graphics.setForegroundColor(TextColor.Factory.fromString(labelColor));
+        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_COLOR));
+        graphics.putString(new TerminalPosition(x, y), label);
+
+        int boxTop = y + 1; // box sits below the label
+
+        // Draw border using wall style
+        graphics.setForegroundColor(TextColor.Factory.fromString(WALL_COLOR));
+        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_COLOR));
+        graphics.enableModifiers(SGR.BOLD);
+
+        // Corners
+        graphics.putString(new TerminalPosition(x, boxTop), CORNER_TL);
+        graphics.putString(new TerminalPosition(x + w - 1, boxTop), CORNER_TR);
+        graphics.putString(new TerminalPosition(x, boxTop + h - 1), CORNER_BL);
+        graphics.putString(new TerminalPosition(x + w - 1, boxTop + h - 1), CORNER_BR);
+
+        // Top/Bottom
+        for (int cx = x + 1; cx < x + w - 1; cx++) {
+            graphics.putString(new TerminalPosition(cx, boxTop), HORIZONTAL_LINE);
+            graphics.putString(new TerminalPosition(cx, boxTop + h - 1), HORIZONTAL_LINE);
+        }
+        // Sides
+        for (int ry = boxTop + 1; ry < boxTop + h - 1; ry++) {
+            graphics.putString(new TerminalPosition(x, ry), VERTICAL_LINE);
+            graphics.putString(new TerminalPosition(x + w - 1, ry), VERTICAL_LINE);
+        }
+
+        // Clear interior
+        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_COLOR));
+        for (int ix = x + 1; ix < x + w - 1; ix++) {
+            for (int iy = boxTop + 1; iy < boxTop + h - 1; iy++) {
+                graphics.putString(new TerminalPosition(ix, iy), " ");
+            }
+        }
+
+        // If there's a pill, render it centered. Each half is scaled according to SCALE_X/SCALE_Y.
+        if (pill != null) {
+            int interiorX = x + 1;
+            int interiorY = boxTop + 1;
+            int interiorW = w - 2;
+            int interiorH = h - 2;
+
+            // Use the same scaling as the main arena so preview matches in-game
+            final int halfW = this.SCALE_X;
+            final int halfH = this.SCALE_Y;
+
+            // positions for pivot and other top-left corners
+            int pivotX = interiorX;
+            int pivotY = interiorY;
+            int otherX = interiorX;
+            int otherY = interiorY;
+
+            switch (pill.getOrientation()) {
+                case 0: // Right: pivot on left, other on right
+                    pivotX = interiorX + 0;
+                    pivotY = interiorY + (interiorH - halfH) / 2;
+                    otherX = interiorX + halfW;
+                    otherY = pivotY;
+                    break;
+                case 2: // Left: pivot on right, other on left
+                    otherX = interiorX + 0;
+                    otherY = interiorY + (interiorH - halfH) / 2;
+                    pivotX = interiorX + halfW;
+                    pivotY = otherY;
+                    break;
+                case 1: // Up: other above pivot => pivot bottom
+                    pivotX = interiorX + (interiorW - halfW) / 2;
+                    pivotY = interiorY + halfH;
+                    otherX = pivotX;
+                    otherY = interiorY + 0;
+                    break;
+                case 3: // Down: other below pivot => pivot top
+                    pivotX = interiorX + (interiorW - halfW) / 2;
+                    pivotY = interiorY + 0;
+                    otherX = pivotX;
+                    otherY = interiorY + halfH;
+                    break;
+                default:
+                    pivotX = interiorX + 0;
+                    pivotY = interiorY + (interiorH - halfH) / 2;
+                    otherX = interiorX + halfW;
+                    otherY = pivotY;
+            }
+
+            // Draw pivot half (color1)
+            graphics.setForegroundColor(TextColor.Factory.fromString(mapColorForeground(pill.getColor1())));
+            graphics.enableModifiers(SGR.BOLD);
+            for (int dx = 0; dx < halfW; dx++) {
+                for (int dy = 0; dy < halfH; dy++) {
+                    graphics.putString(new TerminalPosition(pivotX + dx, pivotY + dy), "◉");
+                }
+            }
+
+            // Draw other half (color2)
+            graphics.setForegroundColor(TextColor.Factory.fromString(mapColorForeground(pill.getColor2())));
+            for (int dx = 0; dx < halfW; dx++) {
+                for (int dy = 0; dy < halfH; dy++) {
+                    graphics.putString(new TerminalPosition(otherX + dx, otherY + dy), "●");
+                }
+            }
+            graphics.disableModifiers(SGR.BOLD);
+        }
+
+        graphics.disableModifiers(SGR.BOLD);
+        graphics.setBackgroundColor(TextColor.Factory.fromString(DEFAULT_COLOR));
     }
 }

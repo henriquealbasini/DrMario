@@ -14,4 +14,9 @@ public interface ArenaInterface {
     void setCurrentPill(Pill pill);
 
     int getVirusCount();
+
+    // Next pill support for preview
+    Pill getNextPill();
+    void setNextPill(Pill pill);
+    boolean generateNextPill();
 }

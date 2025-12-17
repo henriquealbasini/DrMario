@@ -11,8 +11,12 @@ public class MenuController implements Controller {
 
     public enum MenuAction { NONE, START, INSTRUCTIONS, RESTART, QUIT }
 
+    // New play modes: ENDLESS (speed ramps) or LEVELS (fixed difficulty speed, increasing viruses)
+    public enum Mode { ENDLESS, LEVELS }
+
     private MenuAction lastAction = MenuAction.NONE;
     private Difficulty difficulty = Difficulty.NORMAL;
+    private Mode mode = Mode.LEVELS; // default to Levels mode
 
     public MenuController() {}
 
@@ -23,6 +27,7 @@ public class MenuController implements Controller {
     }
 
     public Difficulty getDifficulty() { return difficulty; }
+    public Mode getMode() { return mode; }
 
     @Override
     public void processKey(KeyStroke key) {
@@ -56,6 +61,10 @@ public class MenuController implements Controller {
                         break;
                     case 'd':
                         difficulty = difficulty.next();
+                        break;
+                    case 'm':
+                        // toggle play mode
+                        mode = (mode == Mode.LEVELS) ? Mode.ENDLESS : Mode.LEVELS;
                         break;
                     default:
                         break;

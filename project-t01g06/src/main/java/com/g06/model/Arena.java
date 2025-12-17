@@ -14,6 +14,7 @@ public class Arena implements ArenaInterface {
     private int height;
     private int width;
     private Pill currentPill;
+    private Pill nextPill;
 
     private final String[] VALID_COLORS = {"RED", "YELLOW", "BLUE"};
     private final Random random = new Random();
@@ -22,47 +23,77 @@ public class Arena implements ArenaInterface {
     private List<Wall> walls;
 
     public Arena(int width, int height){
+        this(width, height, 5); // default to 5 viruses for backward compatibility
+    }
+
+    // New constructor allowing control of virus count per arena/level
+    public Arena(int width, int height, int virusCount){
         this.height = height;
         this.width = width;
         this.matrix = new Block[width][height];
         this.walls = createWalls();
-        spawnViruses(5);
-        // Attempt to spawn an initial pill; ignore result here (controller will check for game over after settles)
-        spawnNewPill();
+        spawnViruses(virusCount);
+        // Initialize current and next pills
+        // Generate next pill then set current from it, and generate another next
+        generateNextPill();
+        // Move next into current
+        if (this.nextPill != null) this.currentPill = this.nextPill;
+        else this.currentPill = null;
+        // Generate a fresh next pill for preview
+        generateNextPill();
     }
 
     public boolean spawnNewPill() {
+        // Compatibility wrapper: promote nextPill to currentPill if available, else try to generate one
+        if (this.nextPill == null) {
+            boolean ok = generateNextPill();
+            if (!ok) return false;
+        }
+
+        // Place next as current at spawn position
+        this.nextPill.getPosition().setX(width / 2);
+        this.nextPill.getPosition().setY(1);
+        // Ensure orientation reset
+        // (Pill constructor sets orientation 0)
+        this.currentPill = this.nextPill;
+
+        // Attempt to generate a fresh next pill for preview; if it fails, nextPill will be null which is acceptable
+        boolean gen = generateNextPill();
+
+        // Validate that the new current pill fits
+        Position p1 = currentPill.getPosition();
+        Position p2 = currentPill.getOtherHalf();
+        if (!isInside(p1) || !isInside(p2)) return false;
+        for (Wall w : walls) {
+            if (w.getPosition().equals(p1) || w.getPosition().equals(p2)) return false;
+        }
+        if (matrix[p1.getX()][p1.getY()] != null || matrix[p2.getX()][p2.getY()] != null) return false;
+
+        return true;
+    }
+
+    // Generate a next pill candidate and store it in nextPill. Returns true if created successfully.
+    public boolean generateNextPill() {
         String color1 = VALID_COLORS[random.nextInt(VALID_COLORS.length)];
         String color2 = VALID_COLORS[random.nextInt(VALID_COLORS.length)];
         Pill candidate = new Pill(width / 2, 1, color1, color2);
 
-        // If either pivot or other half collides with an occupied cell or wall, spawning fails -> game over
-        Position p1 = candidate.getPosition();
-        Position p2 = candidate.getOtherHalf();
-
-        // Check bounds and occupancy
-        if (!isInside(p1) || !isInside(p2)) return false;
-
-        // Check walls
-        for (Wall w : walls) {
-            if (w.getPosition().equals(p1) || w.getPosition().equals(p2)) return false;
-        }
-
-        // Check existing blocks
-        if (matrix[p1.getX()][p1.getY()] != null || matrix[p2.getX()][p2.getY()] != null) return false;
-
-        this.currentPill = candidate;
+        // For next pill we just store colors and orientation; placement happens when promoted to current
+        this.nextPill = candidate;
         return true;
     }
 
+    public Pill getNextPill() { return nextPill; }
+    public void setNextPill(Pill pill) { this.nextPill = pill; }
+
     public void spawnViruses(int count){
-        int maxAttempts = count * 2;
+        int maxAttempts = count * 4; // allow more attempts to place viruses safely
         int attempts = 0;
         int placed = 0;
 
         int minX = 1;
         int maxX = width - 2;
-        int minY = 4;
+        int minY = 6; // raise minY to spawn viruses lower (avoid top rows)
         int maxY = height - 2;
 
         while (placed < count && attempts < maxAttempts) {
