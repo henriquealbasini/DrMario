@@ -3,77 +3,63 @@ package com.g06.controller;
 import com.googlecode.lanterna.input.KeyStroke;
 import com.googlecode.lanterna.input.KeyType;
 
-/**
- * Very small controller for menu screens. It only listens for Enter, 'r' (restart) and 'q' (quit).
- * Extended to allow difficulty selection via Left/Right arrows or A/D keys.
- */
 public class MenuController implements Controller {
 
     public enum MenuAction { NONE, START, INSTRUCTIONS, RESTART, QUIT }
 
-    // New play modes: ENDLESS (speed ramps) or LEVELS (fixed difficulty speed, increasing viruses)
-    public enum Mode { ENDLESS, LEVELS }
+    // Novo Enum para o Modo de Jogo
+    public enum Mode { CLASSIC, INFINITE }
 
     private MenuAction lastAction = MenuAction.NONE;
-    private Difficulty difficulty = Difficulty.NORMAL;
-    private Mode mode = Mode.LEVELS; // default to Levels mode
-
-    public MenuController() {}
-
-    public MenuAction consumeAction() {
-        MenuAction a = lastAction;
-        lastAction = MenuAction.NONE;
-        return a;
-    }
-
-    public Difficulty getDifficulty() { return difficulty; }
-    public Mode getMode() { return mode; }
+    private Difficulty difficulty = Difficulty.EASY;
+    private Mode mode = Mode.CLASSIC; // Valor por defeito
 
     @Override
     public void processKey(KeyStroke key) {
         if (key == null) return;
+        lastAction = MenuAction.NONE;
 
-        // Difficulty selection: Arrows or A/D
-        if (key.getKeyType() == KeyType.ArrowLeft) {
-            difficulty = difficulty.previous();
-            return;
-        }
-        if (key.getKeyType() == KeyType.ArrowRight) {
-            difficulty = difficulty.next();
-            return;
-        }
-
-        if (key.getKeyType() == KeyType.Character) {
-            Character c = key.getCharacter();
-            if (c != null) {
-                switch (Character.toLowerCase(c)) {
-                    case 'q':
-                        lastAction = MenuAction.QUIT;
-                        break;
-                    case 'r':
-                        lastAction = MenuAction.RESTART;
-                        break;
-                    case 'i':
-                        lastAction = MenuAction.INSTRUCTIONS;
-                        break;
-                    case 'a':
-                        difficulty = difficulty.previous();
-                        break;
-                    case 'd':
-                        difficulty = difficulty.next();
-                        break;
-                    case 'm':
-                        // toggle play mode
-                        mode = (mode == Mode.LEVELS) ? Mode.ENDLESS : Mode.LEVELS;
-                        break;
-                    default:
-                        break;
-                }
-            }
-        } else if (key.getKeyType() == KeyType.Enter) {
+        if (key.getKeyType() == KeyType.Enter) {
             lastAction = MenuAction.START;
-        } else if (key.getKeyType() == KeyType.Escape) {
-            lastAction = MenuAction.RESTART; // Reutilizamos RESTART para "Voltar ao Início"
         }
+        else if (key.getKeyType() == KeyType.Escape) {
+            lastAction = MenuAction.RESTART;
+        }
+        else if (key.getKeyType() == KeyType.Character && key.getCharacter() != null) {
+            switch (Character.toLowerCase(key.getCharacter())) {
+                case 'q':
+                    lastAction = MenuAction.QUIT;
+                    break;
+                case 'r':
+                    lastAction = MenuAction.RESTART;
+                    break;
+                case 'i':
+                    lastAction = MenuAction.INSTRUCTIONS;
+                    break;
+                // --- MUDAR MODO (Tecla M) ---
+                case 'm':
+                    if (mode == Mode.CLASSIC) mode = Mode.INFINITE;
+                    else mode = Mode.CLASSIC;
+                    break;
+                // --- MUDAR DIFICULDADE (Exemplo com setas, opcional) ---
+                // case 'd': ... logica para mudar dificuldade ...
+            }
+        }
+    }
+
+    public MenuAction getAction() {
+        return lastAction;
+    }
+
+    public void resetAction() {
+        this.lastAction = MenuAction.NONE;
+    }
+
+    public Difficulty getDifficulty() {
+        return difficulty;
+    }
+
+    public Mode getMode() {
+        return mode;
     }
 }
