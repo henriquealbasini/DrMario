@@ -19,4 +19,9 @@ public interface ArenaInterface {
     Pill getNextPill();
     void setNextPill(Pill pill);
     boolean generateNextPill();
+    int getLevel();
+    // Sword support
+    Sword getCurrentSword();
+    void setCurrentSword(Sword sword);
+    boolean spawnSwordAt(int x);
 }

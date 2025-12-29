@@ -24,7 +24,6 @@ public class ArenaViewer {
 
     //Textures
 
-    //com.g06.model.Wall
     private static final String HORIZONTAL_LINE = "─";
     private static final String VERTICAL_LINE = "│";
     private static final String CORNER_TL = "┌";
@@ -32,8 +31,7 @@ public class ArenaViewer {
     private static final String CORNER_BL = "└";
     private static final String CORNER_BR = "┘";
 
-    //Blocks — use solid/shaded block elements that render well in most monospaced fonts.
-    //Fallbacks included for environments/polices that lack advanced box glyphs.
+
     private static final String[] TEXTURE_CHARS = {
             "█", // full block
             "▓", // dark shade
@@ -48,13 +46,10 @@ public class ArenaViewer {
 
 
 
-    //Color palette
 
-    //com.g06.model.Wall
     private static final String WALL_COLOR = "#00bbf1";
     private static final String WALL_BG_COLOR = "#0a2695";
 
-    //Pills | Blocks
     private static final Map<String, String> FOREGROUND_COLORS = Map.of(
             "RED", "#ff4454",
             "YELLOW", "#ffe112",
@@ -78,7 +73,7 @@ public class ArenaViewer {
     }
 
     // Updated draw signature to render HUD. levelStartTime may be null for safety.
-    public void draw(Arena arena, int level, Difficulty difficulty, MenuController.Mode mode, Instant levelStartTime, long pausedElapsedSeconds, boolean showContinue, int score) {
+    public void draw(Arena arena, int level, Difficulty difficulty, MenuController.Mode mode, Instant levelStartTime, long pausedElapsedSeconds, boolean showContinue, int score, int swordCharges) {
         // Compute arena drawing area leaving space on the right for HUD
         int arenaCols = arena.getWidth() * this.SCALE_X;
         int arenaRows = arena.getHeight() * this.SCALE_Y;
@@ -109,11 +104,49 @@ public class ArenaViewer {
             drawPill(arena.getCurrentPill());
         }
 
+        // Draw the current falling Sword if present
+        if (arena.getCurrentSword() != null) {
+            drawSword(arena.getCurrentSword());
+        }
+
         // Draw HUD on the right
-        drawHUD(arena, level, difficulty, mode, levelStartTime, pausedElapsedSeconds, arenaCols, showContinue, score);
+        drawHUD(arena, level, difficulty, mode, levelStartTime, pausedElapsedSeconds, arenaCols, showContinue, score, swordCharges);
     }
 
-    private void drawHUD(Arena arena, int level, Difficulty difficulty, MenuController.Mode mode, Instant levelStartTime, long pausedElapsedSeconds, int arenaCols, boolean showContinue, int score) {
+    private void drawSword(Sword sword) {
+        if (sword == null) return;
+        // Render body segments as '|' and the tip (bottom) as \_/
+        graphics.setForegroundColor(TextColor.Factory.fromString("#FFFFFF"));
+        graphics.enableModifiers(SGR.BOLD);
+        java.util.List<Position> segs = sword.getSegments();
+        for (int i = 0; i < segs.size(); i++) {
+            Position seg = segs.get(i);
+            int bx = seg.getX() * SCALE_X;
+            int by = seg.getY() * SCALE_Y;
+
+            for (int dx = 0; dx < SCALE_X; dx++) {
+                for (int dy = 0; dy < SCALE_Y; dy++) {
+                    String ch;
+                    if (i == segs.size() - 1) {
+                        // tip: render \ _ /
+                        if (SCALE_X >= 3) {
+                            if (dx == 0) ch = "\\";
+                            else if (dx == SCALE_X - 1) ch = "/";
+                            else ch = "_";
+                        } else {
+                            ch = "v"; // fallback for narrow scales
+                        }
+                    } else {
+                        ch = "|"; // body
+                    }
+                    graphics.putString(new TerminalPosition(bx + dx, by + dy), ch);
+                }
+            }
+        }
+        graphics.disableModifiers(SGR.BOLD);
+    }
+
+    private void drawHUD(Arena arena, int level, Difficulty difficulty, MenuController.Mode mode, Instant levelStartTime, long pausedElapsedSeconds, int arenaCols, boolean showContinue, int score, int swordCharges) {
         int hudX = arenaCols + 2; // leave 2 columns gap
         int row = 1;
         graphics.setForegroundColor(TextColor.Factory.fromString("#FFFFFF"));
@@ -170,6 +203,16 @@ public class ArenaViewer {
         graphics.putString(new TerminalPosition(hudX, row++), "Left/Right: Move");
         graphics.putString(new TerminalPosition(hudX, row++), "Up: Rotate");
         graphics.putString(new TerminalPosition(hudX, row++), "Down: Drop");
+
+        // Sword status / power-up hint (show when charge is available)
+        if (swordCharges > 0 && arena.getCurrentSword() == null) {
+            graphics.putString(new TerminalPosition(hudX, row++), "Sword ready — press Space to deploy");
+            graphics.putString(new TerminalPosition(hudX, row++), "Sword: " + swordCharges + " charge(s)");
+        } else if (arena.getCurrentSword() != null) {
+            graphics.putString(new TerminalPosition(hudX, row++), "Sword: active");
+        } else {
+            graphics.putString(new TerminalPosition(hudX, row++), "Sword: locked");
+        }
 
         // Place continue/quit hints near bottom to ensure visibility
         int terminalRows = graphics.getSize().getRows();
