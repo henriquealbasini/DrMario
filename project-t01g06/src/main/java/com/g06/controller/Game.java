@@ -47,6 +47,11 @@ public class Game {
     private int level = 1;
     private Instant levelStartTime = null;
     private long levelElapsedBeforePause = 0; // seconds
+    // cumulative power-up state carried across levels
+    private int cumulativeSwordCharges = 0;
+    private int cumulativeBlocksCleared = 0;
+    // number of levels the player has completed so far (used to grant swords every 2 completed levels)
+    private int levelsCompleted = 0;
 
     public Game(){
         try {
@@ -87,15 +92,17 @@ public class Game {
         }
 
         // Initialize with level 1 (don't start timer yet)
-        this.arena = new Arena(RES_X, RES_Y, computeVirusCountForLevel(1));
-        if (!headless) {
-            this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
-            this.menuViewer = new MenuViewer(screen.newTextGraphics());
-        }
+         this.arena = new Arena(RES_X, RES_Y, computeVirusCountForLevel(1));
+        // Ensure arena knows the current level so controllers can initialize powerups
+        this.arena.setLevel(this.level);
+         if (!headless) {
+             this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
+             this.menuViewer = new MenuViewer(screen.newTextGraphics());
+         }
 
-        this.arenaController = new ArenaController(arena);
-        this.menuController = new MenuController();
-        this.controller = menuController; // start in menu
+         this.menuController = new MenuController();
+         this.arenaController = new ArenaController(arena, false, menuController.getDifficulty(), cumulativeSwordCharges, cumulativeBlocksCleared);
+         this.controller = menuController; // start in menu
 
         // Initialize fall delay from menu default
         this.fallDelayMs = menuController.getDifficulty().getDelayMs();
@@ -164,6 +171,16 @@ public class Game {
                         if (action == MenuController.MenuAction.START) {
                             if (gameState == GameState.VICTORY) {
                                 // Continue to next level when ENTER pressed on victory
+                                // Persist sword state from current controller so charges do not reset
+                                if (arenaController != null) {
+                                    cumulativeSwordCharges = ((ArenaController)arenaController).getSwordCharges();
+                                    cumulativeBlocksCleared = ((ArenaController)arenaController).getBlocksCleared();
+                                }
+                                // Mark the completed level and grant charges per 2 completed levels
+                                levelsCompleted++;
+                                if (levelsCompleted % 2 == 0) {
+                                    cumulativeSwordCharges++;
+                                }
                                 level = level + 1;
                                 startLevel(level);
                                 continue;
@@ -171,7 +188,6 @@ public class Game {
 
                             // Start playing from menu - ensure timer and proper setup
                             startLevel(level);
-
                         } else if (action == MenuController.MenuAction.INSTRUCTIONS) {
                             gameState = GameState.INSTRUCTIONS;
 
@@ -230,7 +246,6 @@ public class Game {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         try {
             while (true) {
-                showStartMenuConsole();
                 String line = reader.readLine(); // wait for Enter or input
                 if (line == null) break;
                 // Start on empty line or Enter
@@ -287,6 +302,10 @@ public class Game {
                                 case '\r':
                                     // If victory, continue to next level
                                     if (gameState == GameState.VICTORY) {
+                                        if (arenaController != null) {
+                                            cumulativeSwordCharges = ((ArenaController)arenaController).getSwordCharges();
+                                            cumulativeBlocksCleared = ((ArenaController)arenaController).getBlocksCleared();
+                                        }
                                         level = level + 1;
                                         startLevel(level);
                                         break;
@@ -331,6 +350,13 @@ public class Game {
                         String resp = reader.readLine();
                         if (resp == null) { quit = true; break; }
                         if (resp.isEmpty()) {
+                            // persist sword state and award charges per 2 completed levels
+                            if (arenaController != null) {
+                                cumulativeSwordCharges = ((ArenaController)arenaController).getSwordCharges();
+                                cumulativeBlocksCleared = ((ArenaController)arenaController).getBlocksCleared();
+                            }
+                            levelsCompleted++;
+                            if (levelsCompleted % 2 == 0) cumulativeSwordCharges++;
                             level = level + 1;
                             startLevel(level);
                             break; // go back to main loop to show updated state
@@ -350,32 +376,22 @@ public class Game {
         }
     }
 
-    private void showStartMenuConsole() {
-        System.out.println("\n=============================\n");
-        System.out.println("   DR-LIKE - JAVA EDITION\n");
-        System.out.println("   Press Enter to start");
-        System.out.println("   Controls: a:left  d:right  w:rotate  s:drop  q:quit");
-        System.out.println("   Difficulty: " + menuController.getDifficulty().name() + " (A/D or 1-4 to change)");
-        System.out.println("   Mode: " + menuController.getMode().name() + " (press M to toggle)");
-        System.out.println("\n=============================\n");
-        System.out.print("> ");
-    }
 
-    private void showGameOverConsole() {
-        System.out.println("\n===== GAME OVER =====");
-        System.out.println("Press R to restart or Q to quit");
-        System.out.print("> ");
-    }
-
+    
     private void resetGame() {
         this.level = 1;
-        if (menuController.getMode() == MenuController.Mode.ENDLESS) {
-            this.arena = new Arena(RES_X, RES_Y, 0); // no viruses in endless
-            this.arenaController = new ArenaController(arena, true, menuController.getDifficulty());
-        } else {
-            this.arena = new Arena(RES_X, RES_Y, computeVirusCountForLevel(1));
-            this.arenaController = new ArenaController(arena, false, menuController.getDifficulty());
-        }
+        this.cumulativeSwordCharges = 0;
+        this.cumulativeBlocksCleared = 0;
+        this.levelsCompleted = 0;
+         if (menuController.getMode() == MenuController.Mode.ENDLESS) {
+             this.arena = new Arena(RES_X, RES_Y, 0); // no viruses in endless
+             this.arena.setLevel(this.level);
+             this.arenaController = new ArenaController(arena, true, menuController.getDifficulty(), cumulativeSwordCharges, cumulativeBlocksCleared);
+         } else {
+             this.arena = new Arena(RES_X, RES_Y, computeVirusCountForLevel(1));
+             this.arena.setLevel(this.level);
+             this.arenaController = new ArenaController(arena, false, menuController.getDifficulty(), cumulativeSwordCharges, cumulativeBlocksCleared);
+         }
          if (!headless) this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
          // Update fallDelay according to menu selection
          this.fallDelayMs = menuController.getDifficulty().getDelayMs();
@@ -388,11 +404,13 @@ public class Game {
          if (menuController.getMode() == MenuController.Mode.ENDLESS) {
             // Endless: no viruses, always spawn pills until game over; use endless ArenaController
             this.arena = new Arena(RES_X, RES_Y, 0);
-            this.arenaController = new ArenaController(arena, true, menuController.getDifficulty());
+            this.arena.setLevel(this.level);
+            this.arenaController = new ArenaController(arena, true, menuController.getDifficulty(), cumulativeSwordCharges, cumulativeBlocksCleared);
          } else {
              int virusCount = computeVirusCountForLevel(lvl);
              this.arena = new Arena(RES_X, RES_Y, virusCount);
-             this.arenaController = new ArenaController(arena, false, menuController.getDifficulty());
+             this.arena.setLevel(this.level);
+             this.arenaController = new ArenaController(arena, false, menuController.getDifficulty(), cumulativeSwordCharges, cumulativeBlocksCleared);
          }
          if (!headless) this.arenaViewer = new ArenaViewer(screen.newTextGraphics(), SCALE_X, SCALE_Y);
 
@@ -425,7 +443,9 @@ public class Game {
             if (menuController.getMode() == MenuController.Mode.ENDLESS && arenaController != null) {
                 score = ((ArenaController)arenaController).getScore();
             }
-            arenaViewer.draw(arena, level, menuController.getDifficulty(), menuController.getMode(), levelStartTime, 0, false, score);
+            int swordCharges = 0;
+            if (arenaController != null) swordCharges = ((ArenaController)arenaController).getSwordCharges();
+            arenaViewer.draw(arena, level, menuController.getDifficulty(), menuController.getMode(), levelStartTime, 0, false, score, swordCharges);
         } else if (gameState == GameState.GAME_OVER) {
             if (menuController.getMode() == MenuController.Mode.LEVELS) {
                 menuViewer.drawGameOverWithLevel(screen.getTerminalSize(), level, true);

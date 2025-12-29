@@ -49,7 +49,7 @@ public class MenuViewer {
         int row = titleStartRow + TITLE_ASCII.length + 1;
         putCentered(row++, "Press Enter to Start", SUB_COLOR, false);
         if (showDifficulty) {
-            putCentered(row++, "Difficulty: " + difficulty.name(), SUB_COLOR, false);
+            putCentered(row++, "Difficulty: " + difficulty.name() + " (D)", SUB_COLOR, false);
         }
         putCentered(row++, "Mode: " + mode.name() + " (M)", SUB_COLOR, false);
         putCentered(row, "Q: Quit | I: Instructions", SUB_COLOR, false);
@@ -145,15 +145,22 @@ public class MenuViewer {
         String title = "INSTRUCTIONS";
 
         int centerY = terminalSize.getRows() / 2;
-        int startY = centerY - 5;
+        int startY = centerY - 15;
 
         putCentered(startY, title, TITLE_COLOR, true);
 
         putCentered(startY + 2, "A/D or Left/Right: Move", "#FFFFFF", false);
         putCentered(startY + 4, "W or Up Arrow: Rotate", "#FFFFFF", false);
         putCentered(startY + 6, "S or Down Arrow: Soft Drop", "#FFFFFF", false);
-        putCentered(startY + 8, "Q: Quit Game", "#FFFFFF", false);
+        putCentered(startY + 8, "D: Change Difficulty | M: Change Mode" , "#FFFFFF", false);
+        putCentered(startY + 10, "R: Restart Game | Q: Quit Game" , "#FFFFFF", false);
+        putCentered(startY + 12, "ESC: Return to Menu", SUB_COLOR, true);
 
-        putCentered(startY + 10, "ESC: Return to Menu", SUB_COLOR, true);
+        // Power-up description: Sword
+        putCentered(startY + 14, "POWER-UP: SWORD", "#ffe112", true);
+        putCentered(startY + 16, "Press Space to deploy a falling sword (1x4).", "#FFFFFF", false);
+        putCentered(startY + 18, "Sword breaks blocks and viruses as it falls, scoring per block.", "#FFFFFF", false);
+        putCentered(startY + 20, "In LEVELS: you gain 1 charge every 2 levels.", "#FFFFFF", false);
+        putCentered(startY + 22, "In ENDLESS: you gain 1 charge per 30 cleared blocks.", "#FFFFFF", false);
     }
 }

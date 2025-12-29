@@ -18,6 +18,13 @@ public class ArenaController implements Controller {
     private final boolean endlessMode; // when true, don't treat zero viruses as victory
     private int score = 0; // used in endless mode
     private final int scoreMultiplier;
+    // Sword power-up state
+    private int swordCharges = 0;
+    private int blocksCleared = 0; // used in endless mode to grant swords per blocks cleared
+
+    // Charge rule: 1 charge granted every 2 levels (cumulative)
+    private static final int LEVELS_PER_SWORD_CHARGE = 2;
+    private static final int ENDLESS_BLOCKS_PER_SWORD = 30;
 
     public ArenaController(ArenaInterface arena) {
         this(arena, false, Difficulty.NORMAL);
@@ -43,12 +50,26 @@ public class ArenaController implements Controller {
             default:
                 this.scoreMultiplier = 15; break;
         }
+        // Default: no initial charges; callers may use the 5-arg constructor to pass initial state
+        this.swordCharges = 0;
+        this.blocksCleared = 0;
+    }
+    // New constructor that accepts initial sword state (used when recreating controller between levels)
+    public ArenaController(ArenaInterface arena, boolean endlessMode, Difficulty difficulty, int initialSwordCharges, int initialBlocksCleared) {
+        this(arena, endlessMode, difficulty);
+        this.swordCharges = Math.max(0, initialSwordCharges);
+        this.blocksCleared = Math.max(0, initialBlocksCleared);
     }
 
     // --- Movimento da Pílula ---
 
     public boolean fallPill() {
         if (gameOver) return false;
+        // If a sword is active, let it fall before handling the pill
+        Sword sword = arena.getCurrentSword();
+        if (sword != null) {
+            return fallSword();
+        }
         Pill currentPill = arena.getCurrentPill();
         if (currentPill == null) return false;
 
@@ -65,8 +86,90 @@ public class ArenaController implements Controller {
         }
     }
 
+    // Handle sword falling: clear blocks it moves into and settle when it cannot move further
+    private boolean fallSword() {
+        Sword sword = arena.getCurrentSword();
+        if (sword == null) return false;
+
+        // Compute positions if sword moves down by 1
+        List<Position> dest = new ArrayList<>();
+        for (Position seg : sword.getSegments()) dest.add(new Position(seg.getX(), seg.getY() + 1));
+
+        // Check for out-of-bounds or walls (can't move)
+        for (Position p : dest) {
+            if (!arena.isInside(p)) {
+                settleSword();
+                return false;
+            }
+            for (Wall w : arena.getWalls()) if (w.getPosition().equals(p)) { settleSword(); return false; }
+        }
+
+        Block[][] matrix = arena.getMatrix();
+
+        // Clear any blocks/viruses in destination cells (award score per block)
+        boolean clearedSomething = false;
+        int clearedCount = 0;
+        for (Position p : dest) {
+            Block b = matrix[p.getX()][p.getY()];
+            if (b != null) {
+                // clear block or virus
+                matrix[p.getX()][p.getY()] = null;
+                this.score += this.scoreMultiplier;
+                clearedSomething = true;
+                clearedCount++;
+            }
+        }
+
+        if (clearedCount > 0 && this.endlessMode) {
+            this.blocksCleared += clearedCount;
+            if (this.blocksCleared >= ENDLESS_BLOCKS_PER_SWORD) {
+                int grants = this.blocksCleared / ENDLESS_BLOCKS_PER_SWORD;
+                this.swordCharges += grants;
+                this.blocksCleared = this.blocksCleared % ENDLESS_BLOCKS_PER_SWORD;
+            }
+        }
+
+        // Move the sword down by one cell (always allowed now)
+        sword.moveDown();
+
+        return true;
+    }
+
+    private void settleSword() {
+        Sword sword = arena.getCurrentSword();
+        if (sword == null) return;
+
+        Block[][] matrix = arena.getMatrix();
+        // Write four settled blocks where the sword segments are
+        for (Position seg : sword.getSegments()) {
+            if (arena.isInside(seg)) {
+                matrix[seg.getX()][seg.getY()] = new Block(seg.getX(), seg.getY(), sword.getColor());
+            }
+        }
+
+        arena.setCurrentSword(null);
+
+        // After settling, run clearing and gravity as usual
+        checkAndClearLines();
+    }
+
     public void movePillLeft() {
         if (gameOver) return;
+        // If a sword exists, move it left instead
+        Sword sword = arena.getCurrentSword();
+        if (sword != null) {
+            // validate left move
+            int nx = sword.getPosition().getX() - 1;
+            List<Position> segs = sword.getSegments();
+            for (Position s : segs) {
+                Position p = new Position(nx, s.getY());
+                if (!arena.isInside(p)) return;
+                for (Wall w : arena.getWalls()) if (w.getPosition().equals(p)) return;
+                if (arena.getMatrix()[p.getX()][p.getY()] != null) return;
+            }
+            sword.moveLeft();
+            return;
+        }
         Pill currentPill = arena.getCurrentPill();
         if (currentPill == null) return;
         Pill nextState = copyPill(currentPill);
@@ -76,6 +179,20 @@ public class ArenaController implements Controller {
 
     public void movePillRight() {
         if (gameOver) return;
+        // If a sword exists, move it right instead
+        Sword sword = arena.getCurrentSword();
+        if (sword != null) {
+            int nx = sword.getPosition().getX() + 1;
+            List<Position> segs = sword.getSegments();
+            for (Position s : segs) {
+                Position p = new Position(nx, s.getY());
+                if (!arena.isInside(p)) return;
+                for (Wall w : arena.getWalls()) if (w.getPosition().equals(p)) return;
+                if (arena.getMatrix()[p.getX()][p.getY()] != null) return;
+            }
+            sword.moveRight();
+            return;
+        }
         Pill currentPill = arena.getCurrentPill();
         if (currentPill == null) return;
         Pill nextState = copyPill(currentPill);
@@ -172,6 +289,15 @@ public class ArenaController implements Controller {
         if (!toRemove.isEmpty()) {
             // Award points: scaled by difficulty multiplier
             this.score += toRemove.size() * this.scoreMultiplier;
+            // In endless mode, track blocks cleared to grant sword charges per threshold
+            if (this.endlessMode) {
+                this.blocksCleared += toRemove.size();
+                if (this.blocksCleared >= ENDLESS_BLOCKS_PER_SWORD) {
+                    int grants = this.blocksCleared / ENDLESS_BLOCKS_PER_SWORD;
+                    this.swordCharges += grants;
+                    this.blocksCleared = this.blocksCleared % ENDLESS_BLOCKS_PER_SWORD;
+                }
+            }
         }
         removeMarkedBlocks(toRemove);
     }
@@ -373,6 +499,9 @@ public class ArenaController implements Controller {
                     case 's':
                         fallPill();
                         return;
+                    case ' ': // space: attempt to spawn sword
+                        attemptSpawnSword();
+                        return;
                     default:
                         break;
                 }
@@ -397,6 +526,25 @@ public class ArenaController implements Controller {
         }
     }
 
+    // Attempt to spawn a sword at the current pill pivot; consumes a charge and the next pill (preview)
+    public boolean attemptSpawnSword() {
+        if (gameOver) return false;
+        if (swordCharges <= 0) return false;
+        Pill next = arena.getNextPill();
+        if (next == null) return false; // require a preview pill to be present
+        Pill current = arena.getCurrentPill();
+        if (current == null) return false;
+
+        int pivotX = current.getPosition().getX();
+        boolean ok = arena.spawnSwordAt(pivotX);
+        if (!ok) return false;
+
+        // Consume the preview pill
+        arena.setNextPill(null);
+        swordCharges--;
+        return true;
+    }
+
     public boolean isGameOver() {
         return gameOver;
     }
@@ -407,4 +555,8 @@ public class ArenaController implements Controller {
 
     // Score accessor for endless mode
     public int getScore() { return score; }
+
+    // Sword charges accessor for HUD
+    public int getSwordCharges() { return swordCharges; }
+    public int getBlocksCleared() { return blocksCleared; }
 }

@@ -21,6 +21,8 @@ public class Arena implements ArenaInterface {
 
     private Block[][] matrix;
     private List<Wall> walls;
+    private Sword currentSword;
+    private int level = 1;
 
     public Arena(int width, int height){
         this(width, height, 5); // default to 5 viruses for backward compatibility
@@ -148,5 +150,28 @@ public class Arena implements ArenaInterface {
             }
         }
         return count;
+    }
+
+    public Sword getCurrentSword() { return currentSword; }
+    public void setCurrentSword(Sword sword) { this.currentSword = sword; }
+
+    public int getLevel() { return level; }
+    public void levelUp() { this.level++; }
+    // Allows external code (Game) to set the level so controllers can initialize powerups correctly
+    public void setLevel(int lvl) { this.level = Math.max(1, lvl); }
+
+    // Attempts to spawn a sword at top of column x (top y = 1). Returns false if blocked.
+    public boolean spawnSwordAt(int x) {
+        int topY = 1; // spawn top segment at y=1 so segments occupy y = 1..4
+        // Validate all four positions are inside and empty
+        for (int i = 0; i < 4; i++) {
+            int yy = topY + i;
+            Position p = new Position(x, yy);
+            if (!isInside(p)) return false;
+            for (Wall w : walls) if (w.getPosition().equals(p)) return false;
+            if (matrix[x][yy] != null) return false;
+        }
+        this.currentSword = new Sword(x, topY, "RED");
+        return true;
     }
 }
